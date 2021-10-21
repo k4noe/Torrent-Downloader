@@ -1,2 +1,153 @@
+# connecting to gdrive
+
 from google.colab import drive
 drive.mount('/content/drive')
+
+--======================================================
+
+# Install Dependency
+! pip install lbry-libtorrent
+
+# Libraries Import
+import time
+import ipywidgets as widgets
+import libtorrent as lt
+
+from threading import Thread
+from IPython.display import display, clear_output
+
+# Server Start
+ses = lt.session()
+ses.listen_on(6881, 6891)
+
+# Torrent States
+state_str = [
+    "queued",
+    "checking",
+    "downloading metadata",
+    "downloading",
+    "finished",
+    "seeding",
+    "allocating",
+    "checking fastresume",
+]
+
+--======================================================
+# Add Torrent
+
+downloads = []
+
+def add_torrent():
+    params = {"save_path": "/content/drive/My Drive/Torrent"}
+    link = input("Enter Magnet Link or Torrent File URL: ")
+    downloads.append(
+        lt.add_magnet_uri(ses, link, params)
+    )
+
+# Remove Torrent
+def remove_torrent():
+    i = int(input("Enter your Choice : "))
+    i-=1
+
+    for index, download in enumerate(downloads[:]):
+        if (index == i) :
+            ses.remove_torrent(download)
+            downloads.remove(download)
+            print(download.name(), "Removed")
+            break
+    else :
+        print("Torrent not found")
+    time.sleep(2.5)
+
+# Torrent Speed
+def rate(val):
+    prefix = ['B', 'kB', 'MB', 'GB', 'TB']
+    for i in range(len(prefix)):
+        if abs(val) < 1000:
+            if i == 0:
+                return '%5.3g %s' % (val, prefix[i])
+            else:
+                return '%4.3g %s' % (val, prefix[i])
+        val /= 1000
+
+    return '%6.3g PB' % val
+    
+    
+--======================================================
+    class output:
+    def __init__(self):
+        self._running = True
+    
+    # Thread Killing
+    def kill(self):
+        self._running = False
+
+    # Print Status Bar
+    def show(self) :
+        layout = widgets.Layout(width="auto")
+        style = {"description_width": "initial"}
+        download_bars = [
+            widgets.FloatSlider(
+                step=0.01, disabled=True, layout=layout, style=style
+            )
+            for _ in downloads
+        ]
+        display(*download_bars)
+
+        while self._running :
+            for index, download in enumerate(downloads[:]):
+                bar = download_bars[index]
+                s = download.status()
+                bar.value = s.progress * 100
+                bar.description = " ".join(
+                    [
+                        str(index+1)+". \t",
+                        download.name()[:25] +
+                        "...\t|\t",
+                        '%s/s | ' % rate(s.download_rate),
+                        '%s/s | ' % rate(s.upload_rate),
+                        '%s Done | ' % rate(s.total_done),
+                        state_str[s.state],
+                    ]
+                )
+            # time.sleep(1)
+            
+--======================================================
+            
+def main() :
+    if downloads == []:
+        print("No Torrent Found, Please add one")
+        add_torrent()
+
+    while True:
+        clear_output()
+        print("No  Torrent Name.    D.Speed U.Speed Downloaded  Status   Progress")
+
+        bar = output()
+        printing = Thread(target=bar.show)
+        printing.start()
+
+        time.sleep(2)
+
+        print("[A] Add Torrent \t\t [R] Remove Torrent \t\t [Q] Quit")
+        choice = input("Enter Choice : ")
+
+        if choice.lower() == 'a':
+            bar.kill()
+            add_torrent()
+
+        elif choice.lower() == 'r':
+            bar.kill()
+            remove_torrent()
+        
+        elif choice.lower() == 'q':
+            bar.kill()
+            print("Daemon Still Running")
+            return
+
+        else :
+            bar.kill()
+            print("Wrong Choice")
+
+if __name__ == "__main__" :
+    main()
